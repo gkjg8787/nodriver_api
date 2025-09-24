@@ -8,7 +8,7 @@ from .models import DownloadRequest, WaitCSSSelector
 logger = logging.getLogger(__name__)
 
 
-def _cookie_to_param(
+async def _cookie_to_param(
     cookies: list[uc.cdp.network.Cookie],
 ) -> list[uc.cdp.network.CookieParam]:
     if not cookies:
@@ -119,7 +119,7 @@ async def dl_with_nodriver(req: DownloadRequest):
         page = await browser.get(req.url)
 
         if req.cookie and req.cookie.cookie_dict_list:
-            br_cookies = _cookie_to_param(await browser.cookies.get_all())
+            br_cookies = await _cookie_to_param(await browser.cookies.get_all())
             included_cookies = await _add_cookies(
                 add_cookies=req.cookie.cookie_dict_list, base_cookies=br_cookies
             )
