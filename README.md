@@ -20,7 +20,10 @@ POST /download
         "path": "string"
       }
     ],
-    "return_cookies": false
+    "return_cookies": false,
+    "save": false,
+    "load": false,
+    "filename": "string"
   },
   "wait_css_selector": {
     "selector": "css_selector",
@@ -43,6 +46,9 @@ POST /download
 | cookie                                     | no      | cookie 設定                                         |
 | cookie.cookie_dict_list                    | no      | "name", "value", "domain"をキーに持つ dict の list  |
 | cookie.return_cookies                      | no      | True の場合、response に cookie を返却              |
+| cookie.save                                | no      | True の場合、cookie をファイルに保存 default: false |
+| cookie.load                                | no      | True の場合、cookie をファイルから読み込み default: false |
+| cookie.filename                            | no      | cookie の保存/読み込みに使用するファイル名。指定しない場合はドメイン名から自動生成 |
 | wait_css_selector                          | no      | css selector 設定                                   |
 | wait_css_selector.selector                 | yes     | ページ取得前に待つ対象の css selector               |
 | wait_css_selector.timeout                  | no      | selector を待つ時間(sec) default: 10                |
