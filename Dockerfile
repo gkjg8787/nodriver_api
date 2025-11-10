@@ -24,7 +24,7 @@ ENV DISPLAY=:99
 RUN apt update && apt install -y google-chrome-stable
 
 WORKDIR /app
-RUN mkdir /app/db && mkdir /app/log
+RUN mkdir /app/db && mkdir /app/log && mkdir /app/cookie
 
 COPY requirements.txt ./
 

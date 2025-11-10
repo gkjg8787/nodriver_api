@@ -10,6 +10,9 @@ class ErrorDetail(BaseModel):
 class Cookie(BaseModel):
     cookie_dict_list: Optional[list[dict[str, Any]]] = None
     return_cookies: Optional[bool] = False
+    save: Optional[bool] = False
+    load: Optional[bool] = False
+    filename: Optional[str] = None
 
 
 class OnError(BaseModel):

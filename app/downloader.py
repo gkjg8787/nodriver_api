@@ -1,9 +1,13 @@
 import asyncio
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
 
 import nodriver as uc
 
 from .models import DownloadRequest, WaitCSSSelector
+
+COOKIE_PATH = Path("/app/cookie/")
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +113,18 @@ async def _wait_css_selector(page, selector: WaitCSSSelector):
                 raise e
 
 
+async def get_domain_from_url(url: str) -> str:
+    parsed_url = urlparse(url)
+    return parsed_url.netloc
+
+
+async def get_cookie_filepath(filename: str, url: str) -> Path:
+    if filename:
+        return COOKIE_PATH / filename
+    domain = await get_domain_from_url(url)
+    return COOKIE_PATH / f"{domain}_cookies.dat"
+
+
 async def dl_with_nodriver(req: DownloadRequest):
     logger.debug(f"input_params : {req.model_dump()}")
     browser = None
@@ -118,12 +134,25 @@ async def dl_with_nodriver(req: DownloadRequest):
         browser = await uc.start()
         page = await browser.get(req.url)
 
-        if req.cookie and req.cookie.cookie_dict_list:
-            br_cookies = await _cookie_to_param(await browser.cookies.get_all())
-            included_cookies = await _add_cookies(
-                add_cookies=req.cookie.cookie_dict_list, base_cookies=br_cookies
-            )
-            await _set_cookies(browser.cookies, included_cookies)
+        if req.cookie:
+            if req.cookie.load:
+                try:
+                    cookie_fpath = await get_cookie_filepath(
+                        filename=req.cookie.filename, url=req.url
+                    )
+                    await browser.cookies.load(cookie_fpath)
+                except Exception as e:
+                    logger.error(f"Error loading cookies from file: {e}")
+
+            if req.cookie.cookie_dict_list:
+                br_cookies = await _cookie_to_param(await browser.cookies.get_all())
+                included_cookies = await _add_cookies(
+                    add_cookies=req.cookie.cookie_dict_list, base_cookies=br_cookies
+                )
+                await _set_cookies(browser.cookies, included_cookies)
+
+            if req.cookie.load or req.cookie.cookie_dict_list:
+                await page.reload()
 
         if req.wait_css_selector:
             try:
@@ -136,6 +165,15 @@ async def dl_with_nodriver(req: DownloadRequest):
 
         html_content = await page.get_content()
         cookies = []
+        if req.cookie and req.cookie.save:
+            try:
+                cookie_fpath = await get_cookie_filepath(
+                    filename=req.cookie.filename, url=req.url
+                )
+                await browser.cookies.save(cookie_fpath)
+            except Exception as e:
+                logger.error(f"Error saving cookies to file: {e}")
+
         if req.cookie and req.cookie.return_cookies:
             uc_cookies = await browser.cookies.get_all()
             cookies = [c.to_json() for c in uc_cookies]
