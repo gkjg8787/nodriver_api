@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Any
 
 
@@ -29,11 +29,22 @@ class WaitCSSSelector(BaseModel):
     pre_wait_time: Optional[float] = 0.0  # seconds
 
 
+class Wait(BaseModel):
+    time: int = 0  # seconds
+
+
+class Scroll(BaseModel):
+    to_bottom: bool = False
+    amount: Optional[int] = None  # pixels
+    pause_time: Optional[float] = 0.5  # seconds
+
+
 class DownloadRequest(BaseModel):
     url: str
     cookie: Optional[Cookie] = None
     wait_css_selector: Optional[WaitCSSSelector] = None
     page_wait_time: Optional[float] = None
+    actions: list[Wait | Scroll] = Field(default_factory=list)
 
 
 class DownloadResponse(BaseModel):

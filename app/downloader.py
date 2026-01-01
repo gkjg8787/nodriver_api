@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import nodriver as uc
 
-from .models import DownloadRequest, WaitCSSSelector
+from .models import DownloadRequest, WaitCSSSelector, Wait, Scroll
 
 COOKIE_PATH = Path("/app/cookie/")
 
@@ -153,6 +153,25 @@ async def dl_with_nodriver(req: DownloadRequest):
 
             if req.cookie.load or req.cookie.cookie_dict_list:
                 await page.reload()
+
+        if not req.actions:
+            req.actions = []
+        for action in req.actions:
+            if isinstance(action, Wait):
+                await asyncio.sleep(action.time)
+                continue
+            elif isinstance(action, Scroll):
+                if action.to_bottom:
+                    await page.evaluate(
+                        """() => {
+                            window.scrollTo(0, document.body.scrollHeight);
+                        }"""
+                    )
+                elif action.amount:
+                    await page.scroll_down(action.amount)
+                if action.pause_time and action.pause_time > 0:
+                    await asyncio.sleep(action.pause_time)
+                continue
 
         if req.wait_css_selector:
             try:
