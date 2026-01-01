@@ -2,6 +2,8 @@ import asyncio
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
+from string import Template
+import re
 
 import nodriver as uc
 
@@ -125,14 +127,67 @@ async def get_cookie_filepath(filename: str, url: str) -> Path:
     return COOKIE_PATH / f"{domain}_cookies.dat"
 
 
+async def format_version_regex(version):
+    # 「(数字.数字) の後の .0」を探して、前のグループ部分だけに置換する
+    return re.sub(r"^(\d+\.\d+)\.0$", r"\1", version)
+
+
+async def _get_page_with_ua(useragent):
+    if not useragent:
+        return await uc.start()
+
+    ua_os_version = await format_version_regex(useragent.os_version)
+    ua_template = Template(
+        "Mozilla/5.0 (Windows NT ${ua_os_version}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36"
+    )
+    ua_template = ua_template.substitute(
+        major=useragent.major, ua_os_version=ua_os_version
+    )
+    browser = await uc.start(browser_args=[f"--user-agent={ua_template}"])
+    page = await browser.get("about:blank")
+    js_template = Template(
+        """
+        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+        Object.defineProperty(navigator, 'userAgentData', {
+            get: () => ({
+                brands: [
+                    { brand: 'Google Chrome', version: '${major}' },
+                    { brand: 'Not_A Brand', version: '24' },
+                    { brand: 'Chromium', version: '${major}' }
+                ],
+                mobile: false,
+                platform: '${platform}',
+                getHighEntropyValues: (hints) => Promise.resolve({
+                    platform: '${platform}',
+                    platformVersion: '${os_version}',
+                    architecture: 'x86',
+                    model: '',
+                    bitness: '64'
+                })
+            })
+        });
+        """
+    )
+
+    injection_script = js_template.substitute(
+        major=useragent.major,
+        platform=useragent.platform,
+        os_version=useragent.os_version,
+    )
+    await page.send(
+        uc.cdp.page.add_script_to_evaluate_on_new_document(source=injection_script)
+    )
+    return page
+
+
 async def dl_with_nodriver(req: DownloadRequest):
     logger.debug(f"input_params : {req.model_dump()}")
     browser = None
     page = None
     try:
 
-        browser = await uc.start()
-        page = await browser.get(req.url)
+        page = await _get_page_with_ua(req.useragent)
+        page = await page.get(req.url)
 
         if req.cookie:
             if req.cookie.load:

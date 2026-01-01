@@ -39,12 +39,19 @@ class Scroll(BaseModel):
     pause_time: Optional[float] = 0.5  # seconds
 
 
+class UserAgent(BaseModel):
+    major: int = 131  # chrome major version
+    platform: str = "Windows"  # e.g., "Windows", "macOS", "Linux"
+    os_version: str = "10.0.0"
+
+
 class DownloadRequest(BaseModel):
     url: str
     cookie: Optional[Cookie] = None
     wait_css_selector: Optional[WaitCSSSelector] = None
     page_wait_time: Optional[float] = None
     actions: list[Wait | Scroll] = Field(default_factory=list)
+    useragent: UserAgent = UserAgent()
 
 
 class DownloadResponse(BaseModel):
