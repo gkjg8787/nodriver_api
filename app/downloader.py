@@ -132,10 +132,9 @@ async def format_version_regex(version):
     return re.sub(r"^(\d+\.\d+)\.0$", r"\1", version)
 
 
-async def _get_page_with_ua(useragent):
+async def _get_browser_with_ua(useragent):
     if not useragent:
         return await uc.start()
-
     ua_os_version = await format_version_regex(useragent.os_version)
     ua_template = Template(
         "Mozilla/5.0 (Windows NT ${ua_os_version}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36"
@@ -143,7 +142,10 @@ async def _get_page_with_ua(useragent):
     ua_template = ua_template.substitute(
         major=useragent.major, ua_os_version=ua_os_version
     )
-    browser = await uc.start(browser_args=[f"--user-agent={ua_template}"])
+    return await uc.start(browser_args=[f"--user-agent={ua_template}"])
+
+
+async def _get_page_with_ua(browser, useragent):
     page = await browser.get("about:blank")
     js_template = Template(
         """
@@ -185,8 +187,8 @@ async def dl_with_nodriver(req: DownloadRequest):
     browser = None
     page = None
     try:
-
-        page = await _get_page_with_ua(req.useragent)
+        browser = await _get_browser_with_ua(req.useragent)
+        page = await _get_page_with_ua(browser, req.useragent)
         page = await page.get(req.url)
 
         if req.cookie:
