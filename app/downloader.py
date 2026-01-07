@@ -146,6 +146,8 @@ async def _get_browser_with_ua(useragent):
 
 
 async def _get_page_with_ua(browser, useragent):
+    if not useragent:
+        return await browser.get("about:blank")
     page = await browser.get("about:blank")
     js_template = Template(
         """

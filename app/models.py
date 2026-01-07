@@ -51,7 +51,7 @@ class DownloadRequest(BaseModel):
     wait_css_selector: Optional[WaitCSSSelector] = None
     page_wait_time: Optional[float] = None
     actions: list[Wait | Scroll] = Field(default_factory=list)
-    useragent: UserAgent = UserAgent()
+    useragent: UserAgent | None = UserAgent()
 
 
 class DownloadResponse(BaseModel):
