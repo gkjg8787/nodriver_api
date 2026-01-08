@@ -36,7 +36,22 @@ POST /download
     },
     "pre_wait_time": 0.0
   },
-  "page_wait_time": 0.0
+  "page_wait_time": 0.0,
+  "actions": [
+    {
+      "time": 0
+    },
+    {
+      "to_bottom": false,
+      "amount": 0,
+      "pause_time": 0.5
+    }
+  ],
+  "useragent": {
+    "major": 141,
+    "platform": "Windows",
+    "os_version": "10.0.0"
+  }
 }
 ```
 
@@ -59,6 +74,14 @@ POST /download
 | wait_css_selector.on_error.check_exist_tag | no      | retry 前に存在する事を確認する css selector         |
 | wait_css_selector.pre_wait_time            | no      | selector を待つ前に待つ時間(sec) default: 0.0       |
 | page_wait_time                             | no      | ページ取得前に待つ時間(sec)                         |
+| actions[].time                             | no      | (Wait) 待機時間(sec)                                |
+| actions[].to_bottom                        | no      | (Scroll) 最下部までスクロールするか                 |
+| actions[].amount                           | no      | (Scroll) スクロール量(px)                           |
+| actions[].pause_time                       | no      | (Scroll) スクロール間の待機時間(sec) default: 0.5   |
+| useragent                                  | no      | UserAgent 設定                                      |
+| useragent.major                            | no      | Chrome major version default: 141                   |
+| useragent.platform                         | no      | Platform default: Windows                           |
+| useragent.os_version                       | no      | OS version default: 10.0.0                          |
 
 ## Response Body
 
