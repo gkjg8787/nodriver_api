@@ -2,7 +2,6 @@ import asyncio
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
-from string import Template
 import re
 
 import nodriver as uc
@@ -136,11 +135,10 @@ async def _get_browser_with_ua(useragent):
     if not useragent:
         return await uc.start()
     ua_os_version = await format_version_regex(useragent.os_version)
-    ua_template = Template(
-        "Mozilla/5.0 (Windows NT ${ua_os_version}; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36"
-    )
-    ua_template = ua_template.substitute(
-        major=useragent.major, ua_os_version=ua_os_version
+    ua_template = (
+        f"Mozilla/5.0 (Windows NT {ua_os_version}; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        f"Chrome/{useragent.major}.0.0.0 Safari/537.36"
     )
     return await uc.start(browser_args=[f"--user-agent={ua_template}"])
 
@@ -149,37 +147,39 @@ async def _get_page_with_ua(browser, useragent):
     if not useragent:
         return await browser.get("about:blank")
     page = await browser.get("about:blank")
-    js_template = Template(
-        """
-        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
-        Object.defineProperty(navigator, 'userAgentData', {
-            get: () => ({
-                brands: [
-                    { brand: 'Google Chrome', version: '${major}' },
-                    { brand: 'Not_A Brand', version: '24' },
-                    { brand: 'Chromium', version: '${major}' }
-                ],
-                mobile: false,
-                platform: '${platform}',
-                getHighEntropyValues: (hints) => Promise.resolve({
-                    platform: '${platform}',
-                    platformVersion: '${os_version}',
-                    architecture: 'x86',
-                    model: '',
-                    bitness: '64'
-                })
-            })
-        });
-        """
-    )
 
-    injection_script = js_template.substitute(
-        major=useragent.major,
-        platform=useragent.platform,
-        os_version=useragent.os_version,
-    )
+    def set_ua_cdp_generator(major, platform, os_version, ua_os_version):
+        yield {
+            "method": "Network.setUserAgentOverride",
+            "params": {
+                "userAgent": (
+                    f"Mozilla/5.0 (Windows NT {ua_os_version}; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    f"Chrome/{major}.0.0.0 Safari/537.36"
+                ),
+                "platform": platform,
+                "userAgentMetadata": {
+                    "brands": [
+                        {"brand": "Chromium", "version": f"{major}"},
+                        {"brand": "Google Chrome", "version": f"{major}"},
+                        {"brand": "Not=A?Brand", "version": "24"},
+                    ],
+                    "platform": platform,
+                    "platformVersion": os_version,
+                    "architecture": "x86",
+                    "model": "",
+                    "mobile": False,
+                },
+            },
+        }
+
     await page.send(
-        uc.cdp.page.add_script_to_evaluate_on_new_document(source=injection_script)
+        set_ua_cdp_generator(
+            major=useragent.major,
+            platform=useragent.platform,
+            os_version=useragent.os_version,
+            ua_os_version=await format_version_regex(useragent.os_version),
+        )
     )
     return page
 

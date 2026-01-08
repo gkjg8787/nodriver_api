@@ -40,7 +40,7 @@ class Scroll(BaseModel):
 
 
 class UserAgent(BaseModel):
-    major: int = 131  # chrome major version
+    major: int = 141  # chrome major version
     platform: str = "Windows"  # e.g., "Windows", "macOS", "Linux"
     os_version: str = "10.0.0"
 
