@@ -3,12 +3,25 @@ import logging
 from pathlib import Path
 from urllib.parse import urlparse
 import re
+from contextlib import asynccontextmanager
+import time
 
 import nodriver as uc
 
-from .models import DownloadRequest, WaitCSSSelector, Wait, Scroll
+from .models import (
+    DownloadRequest,
+    WaitCSSSelector,
+    Wait,
+    Scroll,
+    NoStatusCode,
+    StatusCodeError,
+)
 
 COOKIE_PATH = Path("/app/cookie/")
+chrome_version_fpath = Path("/app/temp/chrome_version.txt")
+DEFAULT_WAIT_TIME = {
+    "after_stop": 1,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +58,44 @@ async def _set_cookies(
     else:
         connection = cookiejar._browser.connection
     await connection.send(uc.cdp.storage.set_cookies(cookies))
+
+
+async def get_browser_version():
+    if chrome_version_fpath.exists():
+        try:
+            version = chrome_version_fpath.read_text().strip()
+            logger.info(f"Read Chrome version from file: {version}")
+            return version
+        except Exception as e:
+            logger.exception(f"Error reading Chrome version from file: {e}")
+
+    try:
+        browser = await uc.start(sandbox=False)
+        page = await browser.get("about:blank")
+        # JavaScriptを実行してUser Agentを取得
+        user_agent = await page.evaluate("navigator.userAgent")
+
+        # 正規表現でChromeのバージョン部分を抽出
+        match = re.search(r"Chrome/(\d+\.\d+\.\d+\.\d+)", user_agent)
+        try:
+            full_version = match.group(1)
+            major_version = full_version.split(".")[0]
+            v = int(major_version)
+            chrome_version_fpath.parent.mkdir(parents=True, exist_ok=True)
+            chrome_version_fpath.write_text(str(v))
+            logger.info(f"Detected Chrome version: {v}")
+            return v
+        except ValueError:
+            logger.exception(
+                f"Failed to parse Chrome version from user agent, full_version:{match.group(1)}"
+            )
+            return None
+    except Exception as e:
+        logger.exception(f"Error detecting Chrome version, error:{e}")
+        return None
+    finally:
+        browser.stop()
+        await asyncio.sleep(DEFAULT_WAIT_TIME["after_stop"])
 
 
 async def _wait_css_selector(page, selector: WaitCSSSelector):
@@ -132,15 +183,23 @@ async def format_version_regex(version):
 
 
 async def _get_browser_with_ua(useragent):
+    browser_args = [
+        "--window-size=1920,1080",
+        "--start-maximized",
+    ]
     if not useragent:
-        return await uc.start()
+        return await uc.start(browser_args=browser_args, sandbox=False)
+    chrome_major_version = await get_browser_version()
+    if not chrome_major_version:
+        chrome_major_version = useragent.major
     ua_os_version = await format_version_regex(useragent.os_version)
     ua_template = (
         f"Mozilla/5.0 (Windows NT {ua_os_version}; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        f"Chrome/{useragent.major}.0.0.0 Safari/537.36"
+        f"Chrome/{chrome_major_version}.0.0.0 Safari/537.36"
     )
-    return await uc.start(browser_args=[f"--user-agent={ua_template}"])
+    browser_args.append(f"--user-agent={ua_template}")
+    return await uc.start(browser_args=browser_args, sandbox=False)
 
 
 async def _get_page_with_ua(browser, useragent):
@@ -173,15 +232,60 @@ async def _get_page_with_ua(browser, useragent):
             },
         }
 
+    chrome_major_version = await get_browser_version()
+    if not chrome_major_version:
+        chrome_major_version = useragent.major
+
     await page.send(
         set_ua_cdp_generator(
-            major=useragent.major,
+            major=chrome_major_version,
             platform=useragent.platform,
             os_version=useragent.os_version,
             ua_os_version=await format_version_regex(useragent.os_version),
         )
     )
     return page
+
+
+@asynccontextmanager
+async def status_monitor_list(tab, url, exact_match=True):
+    """
+    受信した全てのステータスコードを時系列でリストに蓄積する
+    """
+    # 履歴を保存するリスト
+    history = []
+
+    async def handler(event: uc.cdp.network.ResponseReceived):
+        # ターゲットURLが含まれるレスポンスをすべて記録
+        if exact_match:
+            if event.response.url == url:
+                history.append(
+                    {
+                        "status": event.response.status,
+                        "url": event.response.url,
+                        "timestamp": time.perf_counter(),
+                        "type": event.type_,  # Document, Fetch, XHR 等の判別用
+                    }
+                )
+        else:
+            if url in event.response.url:
+                history.append(
+                    {
+                        "status": event.response.status,
+                        "url": event.response.url,
+                        "timestamp": time.perf_counter(),
+                        "type": event.type_,  # Document, Fetch, XHR 等の判別用
+                    }
+                )
+
+    tab.add_handler(uc.cdp.network.ResponseReceived, handler)
+
+    try:
+        # 呼び出し側にはリストの参照を渡す
+        yield history
+    finally:
+        # 必ずハンドラーを解除
+        tab.remove_handler(uc.cdp.network.ResponseReceived, handler)
 
 
 async def dl_with_nodriver(req: DownloadRequest):
@@ -191,55 +295,85 @@ async def dl_with_nodriver(req: DownloadRequest):
     try:
         browser = await _get_browser_with_ua(req.useragent)
         page = await _get_page_with_ua(browser, req.useragent)
-        page = await page.get(req.url)
 
-        if req.cookie:
-            if req.cookie.load:
+        async with status_monitor_list(page, req.url, exact_match=True) as history:
+            page = await page.get(req.url)
+            if req.cookie:
+                if req.cookie.load:
+                    try:
+                        cookie_fpath = await get_cookie_filepath(
+                            filename=req.cookie.filename, url=req.url
+                        )
+                        await browser.cookies.load(cookie_fpath)
+                    except Exception as e:
+                        logger.error(f"Error loading cookies from file: {e}")
+
+                if req.cookie.cookie_dict_list:
+                    br_cookies = await _cookie_to_param(await browser.cookies.get_all())
+                    included_cookies = await _add_cookies(
+                        add_cookies=req.cookie.cookie_dict_list, base_cookies=br_cookies
+                    )
+                    await _set_cookies(browser.cookies, included_cookies)
+
+                if req.cookie.load or req.cookie.cookie_dict_list:
+                    await page.reload()
+
+            if not req.actions:
+                req.actions = []
+            for action in req.actions:
+                if isinstance(action, Wait):
+                    await asyncio.sleep(action.time)
+                    continue
+                elif isinstance(action, Scroll):
+                    if action.to_bottom:
+                        await page.evaluate(
+                            """() => {
+                                window.scrollTo(0, document.body.scrollHeight);
+                            }"""
+                        )
+                    elif action.amount:
+                        await page.scroll_down(action.amount)
+                    if action.pause_time and action.pause_time > 0:
+                        await asyncio.sleep(action.pause_time)
+                    continue
+
+            if req.wait_css_selector:
                 try:
-                    cookie_fpath = await get_cookie_filepath(
-                        filename=req.cookie.filename, url=req.url
-                    )
-                    await browser.cookies.load(cookie_fpath)
+                    await _wait_css_selector(page, req.wait_css_selector)
                 except Exception as e:
-                    logger.error(f"Error loading cookies from file: {e}")
+                    logger.error(f"Error waiting for CSS selector: {e}")
+                    return False, e, []
+            elif req.page_wait_time:
+                await asyncio.sleep(req.page_wait_time)
 
-            if req.cookie.cookie_dict_list:
-                br_cookies = await _cookie_to_param(await browser.cookies.get_all())
-                included_cookies = await _add_cookies(
-                    add_cookies=req.cookie.cookie_dict_list, base_cookies=br_cookies
-                )
-                await _set_cookies(browser.cookies, included_cookies)
+        if not history:
+            return (
+                False,
+                NoStatusCode("Failed to retrieve status code from the page"),
+                [],
+            )
 
-            if req.cookie.load or req.cookie.cookie_dict_list:
-                await page.reload()
-
-        if not req.actions:
-            req.actions = []
-        for action in req.actions:
-            if isinstance(action, Wait):
-                await asyncio.sleep(action.time)
-                continue
-            elif isinstance(action, Scroll):
-                if action.to_bottom:
-                    await page.evaluate(
-                        """() => {
-                            window.scrollTo(0, document.body.scrollHeight);
-                        }"""
-                    )
-                elif action.amount:
-                    await page.scroll_down(action.amount)
-                if action.pause_time and action.pause_time > 0:
-                    await asyncio.sleep(action.pause_time)
-                continue
-
-        if req.wait_css_selector:
+        if history[-1].get("status"):
             try:
-                await _wait_css_selector(page, req.wait_css_selector)
-            except Exception as e:
-                logger.error(f"Error waiting for CSS selector: {e}")
-                return False, e, []
-        elif req.page_wait_time:
-            await asyncio.sleep(req.page_wait_time)
+                latest_status = int(history[-1]["status"])
+            except:
+                logger.warning(
+                    f"Failed to parse status code , status_code_history:{history[-1]}"
+                )
+                latest_status = 0
+            if latest_status >= 400:
+                logger.error(
+                    f"Status code error, history:{history}, latest_status:{latest_status}"
+                )
+                return (
+                    False,
+                    StatusCodeError(
+                        f"Status code error: {history[-1]}",
+                    ),
+                    [],
+                )
+        else:
+            logger.warning(f"No status code , history:{history}")
 
         html_content = await page.get_content()
         cookies = []
@@ -262,11 +396,6 @@ async def dl_with_nodriver(req: DownloadRequest):
         logger.exception("other error")
         return False, e, []
     finally:
-        if page:
-            try:
-                await page.close()
-            except Exception:
-                logger.exception("page close error")
         if browser:
             try:
                 browser.stop()
