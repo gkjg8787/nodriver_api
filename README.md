@@ -1,6 +1,6 @@
 # 概要
 
-nodriver+chrome+Xvfb を使用してサイトの HTML のダウンロードをする API
+nodriver, Chromium, Xvfb を使用してサイトの HTML のダウンロードをする API
 
 # API
 
