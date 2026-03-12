@@ -9,8 +9,7 @@ RUN ln -sf /usr/share/zoneinfo/Japan /etc/localtime && \
     echo $TZ > /etc/timezone
 
 
-RUN apt-get update && \
-    apt-get install -y \
+RUN apt-get install -y \
     sqlite3 procps curl chromium xvfb
 RUN apt-get -y install locales && \
     localedef -f UTF-8 -i ja_JP ja_JP.UTF-8
@@ -20,8 +19,6 @@ LANGUAGE=ja_JP:en \
 LC_ALL=ja_JP.UTF-8
 
 ENV DISPLAY=:99
-
-RUN apt update && apt install -y google-chrome-stable
 
 WORKDIR /app
 RUN mkdir /app/db && mkdir /app/log && mkdir /app/cookie
