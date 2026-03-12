@@ -9,7 +9,8 @@ RUN ln -sf /usr/share/zoneinfo/Japan /etc/localtime && \
     echo $TZ > /etc/timezone
 
 
-RUN apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y \
     sqlite3 procps curl chromium xvfb
 RUN apt-get -y install locales && \
     localedef -f UTF-8 -i ja_JP ja_JP.UTF-8
