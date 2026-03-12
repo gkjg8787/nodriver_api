@@ -10,16 +10,13 @@ RUN ln -sf /usr/share/zoneinfo/Japan /etc/localtime && \
 
 
 RUN apt-get install -y \
-    sqlite3 procps curl gnupg apt-transport-https xvfb
+    sqlite3 procps curl chromium xvfb
 RUN apt-get -y install locales && \
     localedef -f UTF-8 -i ja_JP ja_JP.UTF-8
 
 ENV LANG=ja_JP.UTF-8 \
 LANGUAGE=ja_JP:en \
 LC_ALL=ja_JP.UTF-8
-
-RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
-RUN echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
 
 ENV DISPLAY=:99
 
